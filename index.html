@@ -1072,14 +1072,23 @@
     return {data:JSON.parse(b64ToUtf8(j.content)),sha:j.sha};
   }
   async function githubWriteData(payload){
-    const remote=await githubReadData();
-    const body=Object.assign({ts:Date.now()},payload);
-    const r=await fetch(`https://api.github.com/repos/${GH_DATA_OWNER}/${GH_DATA_REPO}/contents/workbench-data.json`,{
-      method:'PUT',
-      headers:{Authorization:'Bearer '+ghToken(),Accept:'application/vnd.github+json','Content-Type':'application/json'},
-      body:JSON.stringify({message:'同步个人工作台数据',content:utf8ToB64(JSON.stringify(body)),sha:remote&&remote.sha||undefined})
-    });
-    if(!r.ok) throw new Error('GitHub HTTP '+r.status);
+    let lastStatus=0;
+    for(let attempt=0;attempt<3;attempt++){
+      const remote=await githubReadData();
+      const merged=remote?mergeData(remote.data.schedule,remote.data.health,remote.data.tomb):payload;
+      const body=Object.assign({ts:Date.now()},merged);
+      if(remote&&remote.data.resetAt) body.resetAt=remote.data.resetAt;
+      const r=await fetch(`https://api.github.com/repos/${GH_DATA_OWNER}/${GH_DATA_REPO}/contents/workbench-data.json`,{
+        method:'PUT',
+        headers:{Authorization:'Bearer '+ghToken(),Accept:'application/vnd.github+json','Content-Type':'application/json'},
+        body:JSON.stringify({message:'同步个人工作台数据',content:utf8ToB64(JSON.stringify(body)),sha:remote&&remote.sha||undefined})
+      });
+      lastStatus=r.status;
+      if(r.ok) return;
+      if(r.status!==409&&r.status!==422) throw new Error('GitHub HTTP '+r.status);
+      await new Promise(x=>setTimeout(x,400*(attempt+1)));
+    }
+    throw new Error('GitHub conflict '+lastStatus);
   }
   async function serverPush(auto){
     const payload=payloadNow();
@@ -1153,7 +1162,8 @@
       try{ localStorage.setItem('wb_user_schedule','1'); localStorage.setItem('wb_user_health','1'); }catch(e){}
     }
     renderSch(); renderTodo(); renderHealth();
-    await serverPush(true);
+    if(dirty){ await serverPush(true); }
+    else { serverOn=true; updateSyncStatus(); }
     if(!auto) toast('同步完成 ✓',true);
   }
   function forcePush(){ doSync(false); }   // 兼容旧调用
