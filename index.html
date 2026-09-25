@@ -1127,6 +1127,13 @@
       return;
     }
     const rp=(remote&&remote.schedule!==undefined)?remote:null;
+    const cloudResetAt=Number((remote&&remote.resetAt)||0);
+    let localResetAt=0; try{ localResetAt=Number(localStorage.getItem('wb_cloud_reset_at')||0); }catch(e){}
+    if(rp&&cloudResetAt>localResetAt){
+      sch=[]; health={}; tomb={};
+      try{ localStorage.setItem('wb_cloud_reset_at',String(cloudResetAt)); localStorage.removeItem('wb_dirty'); }catch(e){}
+      dirty=false;
+    }
     let payload;
     if(rp){
       payload=mergeData(rp.schedule,rp.health,rp.tomb);
