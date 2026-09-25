@@ -1022,7 +1022,11 @@
     const T=Object.assign({}, rt||{}, tomb);
     const map={};
     (rs||[]).forEach(p=>{ if(p&&p.id!=null) map[p.id]=p; });
-    sch.forEach(p=>{ if(p&&p.id!=null) map[p.id]=p; });
+    sch.forEach(p=>{
+      if(!p||p.id==null) return;
+      const old=map[p.id];
+      if(!old || Number(p.updatedAt||0)>Number(old.updatedAt||0)) map[p.id]=p;
+    });
     /* 演示数据永不复活：即使云端还躺着 demo 条目，也不进合并结果，
        并顺手登记墓碑，让它在云端也一并被清掉。 */
     const ms=Object.values(map).filter(p=>{
@@ -1380,7 +1384,7 @@
   /* 某一天所有相关条目：当天排期的 + 当天到期的 + （仅今天）逾期的 */
   function dayItems(k){
     const isToday=(k===fmtFull(TODAY));
-    return sch.filter(p=>(p.date===k)||(p.due===k)||(isToday&&!!p.due&&p.due<k&&!p.done));
+    return sch.filter(p=>(p.date===k)||(p.due===k)||(isToday&&!p.done&&(!!p.due||!!p.date)&&((p.due||p.date)<k)));
   }
 
   /* 单条渲染，日程页/待办页共用（mode: 'day' | 'todo'） */
@@ -1455,6 +1459,7 @@
       }
       if(!html) html='<div class="empty">还没有任何待办，点下面「＋ 添加待办」记一条</div>';
     }else if(tdFilter==='today'){
+      group(ic('alert')+' 昨日 / 逾期待完成','over',over);
       group('📌 今天','',today);
       if(!html) html='<div class="empty">今天没有待完成的事项</div>';
     }else if(tdFilter==='over'){
@@ -1491,7 +1496,7 @@
     const p=sch.find(x=>String(x.id)===String(planId)); if(!p) return;
     const date=$('#pl-date').value;
     if(!date){ toast('请选择安排的日期'); return; }
-    p.date=date; p.period=getActive('pl-period');
+    p.date=date; p.period=getActive('pl-period'); p.updatedAt=Date.now();
     localStorage.setItem('wb_user_schedule','1');
     saveSch(); closePlanModal();
     const q=date.split('-').map(Number);
@@ -1502,10 +1507,10 @@
   function unplanSch(id, silent){
     const p=sch.find(x=>String(x.id)===String(id)); if(!p) return;
     if(silent){
-      p.date=''; p.period=''; p.time=''; saveSch(); renderBoth(); return;
+      p.date=''; p.period=''; p.time=''; p.updatedAt=Date.now(); saveSch(); renderBoth(); return;
     }
     askConfirm('移回待办','将取消「'+p.title+'」的排期，放回待办池。内容、截止日和完成状态都会保留。','移回',()=>{
-      p.date=''; p.period=''; p.time='';
+      p.date=''; p.period=''; p.time=''; p.updatedAt=Date.now();
       localStorage.setItem('wb_user_schedule','1');
       saveSch(); renderBoth(); renderSettings();
       toast('已移回待办池');
@@ -1665,7 +1670,7 @@
   /* 日程 CRUD */
   function toggleSch(id){
     const p=sch.find(x=>String(x.id)===String(id)); if(!p) return;
-    p.done=!p.done; localStorage.setItem('wb_user_schedule','1'); saveSch(); renderBoth();
+    p.done=!p.done; p.updatedAt=Date.now(); localStorage.setItem('wb_user_schedule','1'); saveSch(); renderBoth();
     toast(p.done?'已完成 ✓':'已恢复');
   }
   function delSch(id){
@@ -1736,9 +1741,9 @@
     const repeat=editingId==null && $('#f-repeat').checked && !!date;
     if(editingId!=null){
       const p=sch.find(x=>String(x.id)===String(editingId));
-      if(p) Object.assign(p,{date,period,cat,prio,time,loc,note,title,due});   // 不动 done，编辑不改变完成状态
+      if(p) Object.assign(p,{date,period,cat,prio,time,loc,note,title,due,updatedAt:Date.now()});   // 不动 done，编辑不改变完成状态
     }else{
-      const base={id:uid(),title,period,cat,prio,time,loc,note,due,done:false,src:'manual',createdAt:Date.now()};
+      const base={id:uid(),title,period,cat,prio,time,loc,note,due,done:false,src:'manual',createdAt:Date.now(),updatedAt:Date.now()};
       sch.push({...base,date});
       if(repeat){
         const bd=dateOfStr(date);
