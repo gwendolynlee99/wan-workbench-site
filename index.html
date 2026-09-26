@@ -1008,7 +1008,7 @@
     if(location.hostname.endsWith('.github.io')&&!ghToken()){ setSync('📱 尚未绑定云端 · 请打开绑定链接','warn'); return; }
     if(!serverOn){ setSync(location.hostname.endsWith('.github.io')?'📱 云端暂不可达 · 改动已存手机，恢复后自动补存':'📱 本机模式 · 服务器暂不可达，改动已存浏览器','warn'); return; }
     if(dirty){ setSync('⏳ 正在保存到本地服务器…','warn'); return; }
-    setSync('💾 本地已保存 · 浏览器 + 服务器文件双保险','ok');
+    setSync(location.hostname.endsWith('.github.io')?'☁️ 云端已保存 · 手机/电脑共用同一份数据':'💾 本地已保存 · 浏览器 + 服务器文件双保险','ok');
   }
   function markDirty(){
     dirty=true; try{ localStorage.setItem('wb_dirty','1'); }catch(e){}
