@@ -698,13 +698,9 @@
       </div>
       <div class="form-row">
         <label>分类</label>
-        <div class="seg" id="f-cat">
-          <div class="seg-item c1 active" data-val="work"><svg class="hci" viewBox="0 0 24 24"><use href="#i-brief"/></svg>工作</div>
-          <div class="seg-item c2" data-val="meet"><svg class="hci" viewBox="0 0 24 24"><use href="#i-phone"/></svg>会议</div>
-          <div class="seg-item c3" data-val="study"><svg class="hci" viewBox="0 0 24 24"><use href="#i-book"/></svg>学习</div>
-          <div class="seg-item c4" data-val="life"><svg class="hci" viewBox="0 0 24 24"><use href="#i-home"/></svg>生活</div>
-          <div class="seg-item c5" data-val="other"><svg class="hci" viewBox="0 0 24 24"><use href="#i-sliders"/></svg>其他</div>
-        </div>
+        <input class="ipt" id="f-cat" list="f-cat-options" placeholder="如：工作 / 会议 / 自定义分类" />
+        <datalist id="f-cat-options"></datalist>
+        <div class="set-hint" style="margin-top:6px">可直接输入新的分类名称；保存后会自动同步到你的其他设备。</div>
       </div>
       <div class="form-row">
         <label>优先级</label>
@@ -949,6 +945,14 @@
   /* ================= 日程管理 ================= */
   let sch = [];
   let schLoaded = false;   // 是否已从本机载入过（待办页可能在日程页之前被打开）
+  const DEFAULT_CATS=['工作','会议','学习','生活','健康','其他'];
+  let customCats=(function(){ try{ const a=JSON.parse(localStorage.getItem('wb_custom_cats')||'[]'); return Array.isArray(a)?a.filter(x=>typeof x==='string'&&x.trim()):[]; }catch(e){ return []; } })();
+  function saveCustomCatsLocal(){ try{ localStorage.setItem('wb_custom_cats', JSON.stringify(customCats)); }catch(e){} }
+  function registerCustomCat(name){
+    const value=String(name||'').trim();
+    if(!value||DEFAULT_CATS.includes(value)||customCats.includes(value)) return;
+    customCats.push(value); saveCustomCatsLocal();
+  }
 
   /* ---------- 本地数据同步（Codex 版，2026-09-20 起替代 WorkBuddy 云端） ----------
      主存储：本地服务器 data/workbench-data.json；浏览器 localStorage 为工作副本。
@@ -1042,10 +1046,20 @@
     });
     return {schedule:ms, health:mh, tomb:T};
   }
+  function mergeCats(){
+    const seen={}; const out=[];
+    Array.prototype.slice.call(arguments).forEach(list=>{
+      (Array.isArray(list)?list:[]).forEach(x=>{
+        const value=String(x||'').trim();
+        if(value&&!seen[value]){ seen[value]=1; out.push(value); }
+      });
+    });
+    return out;
+  }
   function payloadNow(){
     purgeAllDemos();
     tombPrune();
-    return { schedule:sch, health:health, tomb:tomb };
+    return { schedule:sch, health:health, tomb:tomb, customCats:customCats };
   }
   const GH_DATA_OWNER='gwendolynlee99';
   const GH_DATA_REPO='wan-workbench-data';
@@ -1076,6 +1090,7 @@
     for(let attempt=0;attempt<3;attempt++){
       const remote=await githubReadData();
       const merged=remote?mergeData(remote.data.schedule,remote.data.health,remote.data.tomb):payload;
+      merged.customCats=mergeCats((remote&&remote.data.customCats)||[],customCats);
       const body=Object.assign({ts:Date.now()},merged);
       if(remote&&remote.data.resetAt) body.resetAt=remote.data.resetAt;
       const r=await fetch(`https://api.github.com/repos/${GH_DATA_OWNER}/${GH_DATA_REPO}/contents/workbench-data.json`,{
@@ -1139,7 +1154,8 @@
     const cloudResetAt=Number((remote&&remote.resetAt)||0);
     let localResetAt=0; try{ localResetAt=Number(localStorage.getItem('wb_cloud_reset_at')||0); }catch(e){}
     if(rp&&cloudResetAt>localResetAt){
-      sch=[]; health={}; tomb={};
+      sch=[]; health={}; tomb={}; customCats=[];
+      saveCustomCatsLocal();
       try{ localStorage.setItem('wb_cloud_reset_at',String(cloudResetAt)); localStorage.removeItem('wb_dirty'); }catch(e){}
       dirty=false;
     }
@@ -1151,6 +1167,8 @@
     }
     sch=Array.isArray(payload.schedule)?payload.schedule:[];
     health=(payload.health&&typeof payload.health==='object')?payload.health:{};
+    customCats=mergeCats((rp&&rp.customCats)||[],customCats);
+    saveCustomCatsLocal();
     if(payload.tomb&&typeof payload.tomb==='object'){
       Object.keys(payload.tomb).forEach(k=>{ if(!(k in tomb)) tomb[k]=payload.tomb[k]; });
       tombSave();
@@ -1560,8 +1578,14 @@
   }
 
   function perName(p){return p==='morning'?'上午':p==='afternoon'?'下午':p==='evening'?'晚上':p==='any'?'不定时段':'';}
-  function catName(c){return {work:'💼 工作',meet:'📞 会议',study:'📖 学习',life:'🏠 生活',health:'💊 健康',other:'⚙️ 其他'}[c]||'其他';}
+  function catName(c){
+    const legacy={work:'💼 工作',meet:'📞 会议',study:'📖 学习',life:'🏠 生活',health:'💊 健康',other:'⚙️ 其他'};
+    if(legacy[c]) return legacy[c];
+    const value=String(c||'').trim();
+    return value ? '🏷️ '+value : '⚙️ 其他';
+  }
   function catClass(c){return {work:'work',meet:'meet',study:'study',life:'life',health:'health',other:'other'}[c]||'other';}
+  function catPlain(c){return {work:'工作',meet:'会议',study:'学习',life:'生活',health:'健康',other:'其他'}[c]||String(c||'').trim()||'其他';}
   function prioName(p){return {high:'高',mid:'中',low:'低'}[p]||'中';}
   function prioClass(p){return {high:'h',mid:'m',low:'l'}[p]||'m';}
 
@@ -1738,7 +1762,9 @@
     $('#f-repeat').checked=false;
     $('#repeat-row').style.display=data?'none':'';
     $$('#f-period .seg-item').forEach(el=>el.classList.toggle('active',el.dataset.val===per));
-    $$('#f-cat .seg-item').forEach(el=>el.classList.toggle('active',el.dataset.val===d.cat));
+    const catBox=$('#f-cat-options');
+    if(catBox) catBox.innerHTML=DEFAULT_CATS.concat(customCats).map(x=>`<option value="${escapeHTML(x)}"></option>`).join('');
+    $('#f-cat').value=catPlain(d.cat);
     $$('#f-prio .seg-item').forEach(el=>el.classList.toggle('active',el.dataset.val===d.prio));
     $('#sch-modal').classList.add('show');
   }
@@ -1750,13 +1776,14 @@
     const date=($('#f-date').value||'').trim();
     const due=($('#f-due').value||'').trim();
     let period=getActive('f-period');
-    const cat=getActive('f-cat');
+    const cat=($('#f-cat').value.trim()||'其他');
     const prio=getActive('f-prio');
     const time=$('#f-time').value;
     const loc=$('#f-loc').value.trim();
     const note=$('#f-note').value.trim();
     if(!date) period='';                                   // 没有日期就谈不上时段 → 直接进待办池
     const repeat=editingId==null && $('#f-repeat').checked && !!date;
+    registerCustomCat(cat);
     if(editingId!=null){
       const p=sch.find(x=>String(x.id)===String(editingId));
       if(p) Object.assign(p,{date,period,cat,prio,time,loc,note,title,due,updatedAt:Date.now()});   // 不动 done，编辑不改变完成状态
@@ -2154,7 +2181,7 @@
      装过一次后，即使服务器/电脑没开也能打开页面（Service Worker 缓存外壳）；
      数据离线存 localStorage，服务器恢复后自动补同步。 */
   if('serviceWorker' in navigator){
-    window.addEventListener('load', ()=>{ navigator.serviceWorker.register('./sw.js?v=15').catch(()=>{}); });
+    window.addEventListener('load', ()=>{ navigator.serviceWorker.register('./sw.js?v=19').catch(()=>{}); });
   }
   </script>
 </body>
